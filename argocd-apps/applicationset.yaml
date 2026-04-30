@@ -25,13 +25,15 @@ spec:
           - name: kube-prometheus-stack
             namespace: monitoring
             serverSideApply: true
-            wave: "-1"
+            wave: "-2"
 
           # 🟡 core infra (optional middle layer)
           - name: metallb
-          - name: traefik
           - name: local-path-provisioner
           - name: reloader
+
+          - name: traefik
+            wave: "-3"
 
           # 🟢 apps that depend on CRDs
           - name: gitea
