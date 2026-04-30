@@ -5,68 +5,44 @@ metadata:
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
-
   generators:
     - list:
         elements:
-          # 🔴 CRD / operator apps FIRST
-          - name: cert-manager
-            wave: "-1"
-
-          - name: cloudnative-pg
-            namespace: cnpg-system
-            serverSideApply: true
-            wave: "-1"
-
-          - name: external-secrets
-            serverSideApply: true
-            wave: "-1"
-
-          - name: kube-prometheus-stack
-            namespace: monitoring
-            serverSideApply: true
-            wave: "-2"
-
-          # 🟡 core infra (optional middle layer)
-          - name: metallb
-          - name: local-path-provisioner
-          - name: reloader
-
-          - name: traefik
-            wave: "-3"
-
-          # 🟢 apps that depend on CRDs
-          - name: gitea
-            wave: "1"
-
-          - name: immich
-            wave: "1"
-
-          - name: nextcloud
-            serverSideApply: true
-            wave: "1"
-
-          # ⚪ everything else (default wave = 0)
           - name: anubis
           - name: argocd
             serverSideApply: true
           - name: audiobookshelf
           - name: arr-stack
             scaleToZero: true
+          - name: cert-manager
           - name: changedetection
+          - name: cloudnative-pg
+            namespace: cnpg-system
+            serverSideApply: true
           - name: convertx
             scaleToZero: true
           - name: external-dns
+          - name: external-secrets
+            serverSideApply: true
+          - name: gitea
           - name: go-healthcheck
           - name: home-assistant
           - name: httpbin
             scaleToZero: true
+          - name: immich
           - name: it-tools
             scaleToZero: true
+          - name: kube-prometheus-stack
+            namespace: monitoring
+            serverSideApply: true
+          - name: local-path-provisioner
           - name: loki
+          - name: metallb
           - name: microbin
             scaleToZero: true
           - name: mosquitto
+          - name: nextcloud
+            serverSideApply: true
           - name: niks3
           - name: openbao
           - name: opentelemetry-collector
@@ -75,9 +51,11 @@ spec:
           - name: pocket-id
             serverSideApply: true
             serverSideDiff: true
+          - name: reloader
           - name: sablier
           - name: scrobble-deduplicator
           - name: tailscale-operator
+          - name: traefik
           - name: vaultwarden
           - name: velero
           - name: versity-gw
@@ -90,47 +68,38 @@ spec:
       annotations:
         argocd.argoproj.io/manifest-generate-paths: "."
         notifications.argoproj.io/subscribe.on-sync-succeeded.telegram: "-1001726711150"
-
-        # ✅ THIS is the important fix
-        argocd.argoproj.io/sync-wave: '{{ dig "wave" "0" . }}'
-
-        # keep your diff behavior
-        argocd.argoproj.io/compare-options: '{{ printf "%s=%s" "ServerSideDiff" (dig "serverSideDiff" "false" . | toString) }}'
-
+        argocd.argoproj.io/compare-options:
+          '{{ printf "%s=%s" "ServerSideDiff" (dig
+          "serverSideDiff" "false" . | toString) }}'
     spec:
       project: default
-
       source:
         repoURL: git@github.com:danielmoisa/homeops.git
         targetRevision: HEAD
         path: "k8s-apps/{{ .name }}"
-
       destination:
         name: in-cluster
         namespace: '{{ default .name (dig "namespace" "" .) }}'
-
       ignoreDifferences:
         - group: apiextensions.k8s.io
           kind: CustomResourceDefinition
           jqPathExpressions:
             - .spec.conversion.webhook.clientConfig.caBundle
-
         - group: apps
-          kind: StatefulSet
+          kind: "StatefulSet"
           jqPathExpressions:
             - .spec.volumeClaimTemplates[].metadata.creationTimestamp
-
         - group: apps
           kind: "*"
           jqPathExpressions:
-            - '{{ ternary ".spec.replicas" ".nonexistent" (eq (dig "scaleToZero" "false" . | toString) "true") }}'
-
+            - '{{ ternary ".spec.replicas" ".nonexistent" (eq (dig
+              "scaleToZero" "false" . | toString) "true") }}'
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
-
         syncOptions:
           - CreateNamespace=true
           - RespectIgnoreDifferences=true
-          - '{{ printf "%s=%s" "ServerSideApply" (dig "serverSideApply" "false" . | toString) }}'
+          - '{{ printf "%s=%s" "ServerSideApply" (dig "serverSideApply"
+            "false" . | toString) }}'
