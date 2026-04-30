@@ -1,0 +1,337 @@
+argo-cd:
+  controller:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+      rules:
+        enabled: true
+        spec:
+          - alert: ArgoCDApplicationNotSynced
+            expr: argocd_app_info{sync_status!="Synced"} != 0
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: ArgoCD application not synced (instance {{ $labels.instance }})
+              description: "Application {{ $labels.name }} run by argo is currently not in sync - Value = {{ $value }}"
+          - alert: ArgoCDApplicationUnhealthy
+            expr: argocd_app_info{health_status!~"Healthy|Suspended"} != 0
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: ArgoCD application unhealthy (instance {{ $labels.instance }})
+              description: "Application {{ $labels.name }} run by argo is currently not healthy - Value = {{ $value }}"
+
+  dex:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+  redis:
+    name: valkey
+    image:
+      repository: docker.io/valkey/valkey
+      tag: 9.1-alpine@sha256:34f4f659e02a67cfdf3995d11ae432219c936005055b2cd39a042e86280e053e
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+  repoServer:
+    useEphemeralHelmWorkingDir: false
+    logLevel: warn
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+    env:
+      - name: HELM_PLUGINS
+        value: /helm-plugins/
+
+    initContainers:
+      - name: helm-plugin-install
+        image: alpine/helm:4@sha256:4b0bdd2cf18ff6bca12aba0b2c5671384dab5035c19c57f0c58b854a0baf65be
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            helm plugin install --verify=false https://github.com/aslafy-z/helm-git || true;
+            helm plugin install --verify=false https://github.com/hypnoglow/helm-s3 || true;
+        env:
+          - name: HELM_PLUGINS
+            value: /helm-plugins/
+        volumeMounts:
+          - mountPath: /helm-plugins/
+            name: helm-plugins
+
+    volumes:
+      - name: helm-plugins
+        emptyDir: {}
+    volumeMounts:
+      - mountPath: /helm-plugins/
+        name: helm-plugins
+
+  applicationSet:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+  notifications:
+    enabled: true
+    secret:
+      create: false
+      name: argocd-notifications-controller-secret
+    argocdUrl: https://argocd.terence.cloud
+    extraEnv:
+      - name: TZ
+        value: Europe/Paris
+      - name: OC_AGENT_HOST
+        value: collector.linkerd-jaeger:55678
+
+    notifiers:
+      service.telegram: |
+        token: $telegram-token
+    templates:
+      template.app-created: |
+        message: Application {{.app.metadata.name}} has been created.
+      template.app-deleted: |
+        message: Application {{.app.metadata.name}} has been deleted.
+      template.app-deployed: |
+        message: |
+          Application {{.app.metadata.name}} is now running new version of deployments manifests.
+      template.app-health-degraded: |
+        message: |
+          Application {{.app.metadata.name}} has degraded.
+          Application details: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}.
+      template.app-sync-failed: |
+        message: |
+          The sync operation of application {{.app.metadata.name}} has failed at {{.app.status.operationState.finishedAt}} with the following error: {{.app.status.operationState.message}}
+          Sync operation details are available at: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}?operation=true .
+      template.app-sync-running: |
+        message: |
+          The sync operation of application {{.app.metadata.name}} has started at {{.app.status.operationState.startedAt}}.
+          Sync operation details are available at: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}?operation=true .
+      template.app-sync-status-unknown: |
+        message: |
+          Application {{.app.metadata.name}} sync is 'Unknown'.
+          Application details: {{.context.argocdUrl}}/applications/{{.app.metadata.name}}.
+          {{range $c := .app.status.conditions}}
+              * {{$c.message}}
+          {{end}}
+      template.app-sync-succeeded: |
+        message: |
+          {{ if .app.status.operationState }}
+          App {{.app.metadata.name}} synced at {{ (call .time.Parse .app.status.operationState.startedAt).Local.Format "02/01/2006 15:04" }}.
+          {{ else }}
+          App {{.app.metadata.name}} synced successfully.
+          {{ end }}
+    triggers:
+      trigger.on-created: |
+        - description: Application is created.
+          oncePer: app.metadata.uid
+          send: [app-created]
+          when: app.status.operationState == nil
+      trigger.on-deleted: |
+        - description: Application is deleted.
+          oncePer: app.metadata.uid
+          send:
+          - app-deleted
+          when: app.metadata.deletionTimestamp != nil
+      trigger.on-deployed: |
+        - description: Application is synced and healthy.
+          oncePer: app.status.operationState?.syncResult?.revision
+          send: [app-deployed]
+          when: app.status.operationState?.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+      trigger.on-health-degraded: |
+        - description: Application has degraded
+          oncePer: app.status.operationState?.syncResult?.revision
+          send:
+          - app-health-degraded
+          when: app.status.health.status == 'Degraded'
+      trigger.on-sync-failed: |
+        - description: Application syncing has failed
+          oncePer: app.status.operationState?.syncResult?.revision
+          send:
+          - app-sync-failed
+          when: app.status.operationState != nil and app.status.operationState.phase in ['Error',
+            'Failed']
+      trigger.on-sync-running: |
+        - description: Application is being synced
+          oncePer: app.status.operationState?.syncResult?.revision
+          send:
+          - app-sync-running
+          when: app.status.operationState != nil and app.status.operationState.phase in ['Running']
+      trigger.on-sync-status-unknown: |
+        - description: Application status is 'Unknown'
+          oncePer: app.status.operationState?.syncResult?.revision
+          send:
+          - app-sync-status-unknown
+          when: app.status.sync.status == 'Unknown'
+      trigger.on-sync-succeeded: |
+        - description: Application syncing has succeeded
+          oncePer: app.status.operationState?.syncResult?.revision
+          send:
+          - app-sync-succeeded
+          when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded']
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+
+  server:
+    metrics:
+      enabled: false
+      serviceMonitor:
+        enabled: false
+
+    ingress:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt
+        external-dns.alpha.kubernetes.io/cloudflare-proxied: "false" # 403 on the github actions runner
+        cert-manager.io/issue-temporary-certificate: "true"
+        external-dns.alpha.kubernetes.io/target: home.terence.cloud
+        traefik.ingress.kubernetes.io/router.middlewares: traefik-modsecurity@kubernetescrd
+      pathType: ImplementationSpecific
+      # paths:
+      #   - /argocd(/|$)(.*)
+      hostname:
+        argocd.terence.cloud
+        # - k8s-ingress.snow-delta.ts.net
+      tls: true
+      ingressClassName: traefik
+      https: false
+  configs:
+    cm:
+      url: https://argocd.terence.cloud
+      resource.exclusions: |
+        - apiGroups:
+          - velero.io
+          kinds:
+          - Backup
+          - Restore
+          clusters:
+          - "*"
+
+      # The application customization allows to do sync waves of Argo applications.
+      # Very useful to counteract race conditions. Ex : deploy Prometheus operator CRDs before the kube-prometheus-stack chart
+      # Or deploy nginx-ingress-controller and external-dns before cert-manager.
+      # The sealed secret customization solves a constantly out of sync status for sealed secrets
+      resource.customizations: |
+        argoproj.io/Application:
+          health.lua: |
+            hs = {}
+            hs.status = "Progressing"
+            hs.message = ""
+            if obj.status ~= nil then
+              if obj.status.health ~= nil then
+                hs.status = obj.status.health.status
+                if obj.status.health.message ~= nil then
+                  hs.message = obj.status.health.message
+                end
+              end
+            end
+            return hs
+        bitnami.com/SealedSecret:
+          health.lua: |
+            hs = {}
+            hs.status = "Healthy"
+            hs.message = "Controller doesn't report resource status"
+            return hs
+
+      # Avoid out of sync loop for aggregated roles
+      resource.compareoptions: |
+        ignoreAggregatedRoles: true
+        ignoreResourceStatusField: all
+
+      dex.config: |
+        connectors:
+          - type: oidc
+            id: pocket-id
+            name: Pocket ID
+            config:
+              issuer: https://auth.terence.cloud
+              clientID: 87fe7308-b48d-4886-aa1c-1146a5d08622
+              clientSecret: $argo-pocket-id-credentials:client-secret
+              insecureEnableGroups: true
+              scopes:
+              - profile
+              - email
+              - groups
+      admin.enabled: "true"
+
+    params:
+      ## Generic parameters
+      # -- Open-Telemetry collector address: (e.g. "otel-collector:4317")
+      otlp.address: ""
+
+      ## Controller Properties
+      # -- Number of application status processors
+      controller.status.processors: 20
+      # -- Number of application operation processors
+      controller.operation.processors: 10
+      # -- Specifies timeout between application self heal attempts
+      controller.self.heal.timeout.seconds: 5
+      # -- Repo server RPC call timeout seconds.
+      controller.repo.server.timeout.seconds: 60
+      # -- Specifies the timeout after which a sync would be terminated. 0 means no timeout
+      controller.sync.timeout.seconds: 0
+
+      ## Server properties
+      # -- Run server without TLS
+      ## NOTE: This value should be set when you generate params by other means as it changes ports used by ingress template.
+      server.insecure: true
+      # -- Value for base href in index.html. Used if Argo CD is running behind reverse proxy under subpath different from /
+      server.basehref: /
+      # -- Used if Argo CD is running behind reverse proxy under subpath different from /
+      server.rootpath: ""
+      # -- Directory path that contains additional static assets
+      server.staticassets: /shared/app
+      # -- Disable Argo CD RBAC for user authentication
+      server.disable.auth: false
+      # -- Enable GZIP compression
+      server.enable.gzip: true
+      # -- Enable proxy extension feature. (proxy extension is in Alpha phase)
+      server.enable.proxy.extension: false
+      # -- Enable the hydrator feature (hydrator is in Alpha phase)
+      hydrator.enabled: false
+      # -- Set X-Frame-Options header in HTTP responses to value. To disable, set to "".
+      server.x.frame.options: sameorigin
+
+      ## Repo-server properties
+      # -- Limit on number of concurrent manifests generate requests. Any value less the 1 means no limit.
+      reposerver.parallelism.limit: 0
+
+      ## ApplicationSet Properties
+      # -- Modify how application is synced between the generator and the cluster. One of: `sync`, `create-only`, `create-update`, `create-delete`
+      applicationsetcontroller.policy: sync
+      # -- Enables use of the Progressive Syncs capability
+      applicationsetcontroller.enable.progressive.syncs: false
+      # -- A list of glob patterns specifying where to look for ApplicationSet resources. (e.g. `"argocd,argocd-appsets-*"`)
+      # @default -- `""` (default is only the ns where the controller is installed)
+      ## For more information: https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Appset-Any-Namespace/
+      applicationsetcontroller.namespaces: ""
+
+      # -- Enables [Applications in any namespace]
+      ## List of additional namespaces where applications may be created in and reconciled from.
+      ## The namespace where Argo CD is installed to will always be allowed.
+      ## Set comma-separated list. (e.g. app-team-one, app-team-two)
+      application.namespaces: ""
+
+      # -- JQ Path expression timeout
+      ## By default, the evaluation of a JQPathExpression is limited to one second.
+      ## If you encounter a "JQ patch execution timed out" error message due to a complex JQPathExpression
+      ## that requires more time to evaluate, you can extend the timeout period.
+      controller.ignore.normalizer.jq.timeout: "1s"
+    rbac:
+      policy.default: role:readonly
+      policy.csv: |
+        g, terence.chateigne@posteo.net, role:admin
+      scopes: "[groups, email]"
+
+    secret:
+      createSecret: true
+      githubSecret: "$argo-webhook-secret:secret"

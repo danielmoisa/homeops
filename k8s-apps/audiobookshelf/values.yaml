@@ -1,0 +1,318 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/library/common/values.schema.json
+app-template:
+  defaultPodOptions:
+    automountServiceAccountToken: false
+    securityContext:
+      runAsUser: 568
+      runAsGroup: 568
+      fsGroup: 568
+      fsGroupChangePolicy: "OnRootMismatch"
+
+  controllers:
+    main:
+      type: deployment
+      strategy: RollingUpdate
+      labels:
+        sablier.enable: "false"
+        sablier.group: "{{ .Release.Name }}"
+      annotations:
+        reloader.stakater.com/auto: "true"
+      containers:
+        main:
+          image:
+            repository: ghcr.io/advplyr/audiobookshelf
+            tag: 2.34.0@sha256:4143292c530f6ac6700afd13360c04f477e4f1a81c1c97c4224b1c7e4330c5c4
+          env:
+            TZ: Europe/Paris
+            PORT: 13378
+          ports:
+            - name: http
+              containerPort: 13378
+          probes:
+            liveness:
+              enabled: true
+              type: HTTP
+            readiness:
+              enabled: true
+              type: HTTP
+    shelfmark:
+      type: deployment
+      # labels:
+      #   sablier.enable: "true"
+      #   sablier.group: "calibre-web-downloader"
+      annotations:
+        reloader.stakater.com/auto: "true"
+      pod:
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          fsGroup: 0
+      containers:
+        main:
+          image:
+            repository: ghcr.io/calibrain/shelfmark
+            tag: v1.2.1@sha256:5e00d47cccaa3b67234855d950d016c50691b78197a68adf15a624f6c08acee2
+          env:
+            TZ: Europe/Paris
+            FLASK_PORT: 8084
+            FLASK_DEBUG: false
+            CLOUDFLARE_PROXY_URL: http://localhost:8000
+            INGEST_DIR: /ebooks
+            UID: "0"
+            GID: "0"
+            APP_ENV: prod
+          ports:
+            - name: http
+              containerPort: 8084
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                failureThreshold: 10
+                timeoutSeconds: 5
+                httpGet:
+                  port: http
+                  path: /api/status
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                failureThreshold: 10
+                timeoutSeconds: 5
+                httpGet:
+                  port: http
+                  path: /api/status
+        cloudflare-bypass:
+          image:
+            repository: ghcr.io/sarperavci/cloudflarebypassforscraping
+            tag: latest@sha256:d56b7e61ff0dc8565e015100482248f64092d5e5c805f92c51a0ed3f024290bf
+          env:
+            TZ: Europe/Paris
+          ports:
+            - name: http
+              containerPort: 8000
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: http
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: http
+
+    webdav:
+      type: deployment
+      strategy: Recreate
+      labels:
+        sablier.enable: "true"
+        sablier.group: "calibre-web-webdav"
+      annotations:
+        reloader.stakater.com/auto: "true"
+      pod:
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          fsGroup: 0
+      containers:
+        main:
+          image:
+            repository: ghcr.io/danielmoisa/apachewebdav
+            tag: 2.4.65-bookworm@sha256:0aa4a0b399a5711005fcb38e8a6776f5518b18aa514f44f0da8e6fdb46333e77
+          env:
+            TZ: Europe/Paris
+            UID: "1000"
+            GID: "100"
+            USERNAME: kindle
+            NO_CHOWN_DATA: "true"
+            PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Release.Name }}-webdav-password"
+                  key: password
+          ports:
+            - name: http
+              containerPort: 80
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /health
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /health
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 13378
+    shelfmark:
+      controller: shelfmark
+      type: ClusterIP
+      ports:
+        http:
+          port: 8084
+    webdav:
+      controller: webdav
+      type: ClusterIP
+      ports:
+        http:
+          port: 80
+
+  ingress:
+    main:
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt
+        external-dns.alpha.kubernetes.io/target: home.terence.cloud
+        # traefik.ingress.kubernetes.io/router.tls.options: cert-manager-client-auth@kubernetescrd
+        # traefik.ingress.kubernetes.io/router.middlewares: "{{ .Release.Namespace }}-sablier@kubernetescrd,traefik-modsecurity@kubernetescrd"
+        # external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+      className: "traefik"
+      hosts:
+        - host: &host1 abs.terence.cloud
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: abs-tls
+          hosts:
+            - *host1
+
+    shelfmark:
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt
+        external-dns.alpha.kubernetes.io/target: home.terence.cloud
+        external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+        traefik.ingress.kubernetes.io/router.tls.options: cert-manager-client-auth@kubernetescrd
+      className: "traefik"
+      hosts:
+        - host: &host2 shfm.terence.cloud
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: shelfmark
+                port: http
+      tls:
+        - secretName: shelfmark-tls
+          hosts:
+            - *host2
+
+  persistence:
+    config-abs:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 50Mi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        main:
+          main:
+            - path: /config
+    config-shelfmark:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 50Mi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        shelfmark:
+          main:
+            - path: /config
+    metadata:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 50Mi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        main:
+          main:
+            - path: /metadata
+    audiobooks:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 5Gi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        main:
+          main:
+            - path: /audiobooks
+    ebooks:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 5Gi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        main:
+          main:
+            - path: /ebooks
+        shelfmark:
+          main:
+            - path: /ebooks
+        webdav:
+          main:
+            - path: /var/lib/dav/data
+              readOnly: true
+    podcasts:
+      enabled: true
+      type: persistentVolumeClaim
+      accessMode: ReadWriteOnce
+      size: 5Gi
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      advancedMounts:
+        main:
+          main:
+            - path: /podcasts
+
+  rawResources:
+    webdav-password:
+      apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      forceRename: "{{ .Release.Name }}-webdav-password"
+      annotations:
+        argocd.argoproj.io/sync-options: ServerSideApply=true
+      spec:
+        spec:
+          refreshInterval: "0"
+          target:
+            name: "{{ .Release.Name }}-webdav-password"
+            creationPolicy: Owner
+          dataFrom:
+            - sourceRef:
+                generatorRef:
+                  apiVersion: generators.external-secrets.io/v1alpha1
+                  kind: ClusterGenerator
+                  name: short-password

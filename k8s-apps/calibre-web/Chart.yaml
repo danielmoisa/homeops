@@ -1,0 +1,9 @@
+apiVersion: v2
+name: calibre-web
+description: Web app for browsing, reading and downloading eBooks stored in a Calibre database
+type: application
+version: 0.1.0
+dependencies:
+  - name: app-template
+    repository: https://bjw-s-labs.github.io/helm-charts
+    version: 4.6.2

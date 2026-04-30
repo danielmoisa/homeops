@@ -1,0 +1,13 @@
+apiVersion: v2
+name: satisfactory-server
+description: Satisfactory server
+type: application
+version: 0.1.0
+dependencies:
+  - name: app-template
+    repository: https://bjw-s-labs.github.io/helm-charts
+    version: 4.6.2
+  - name: cluster
+    alias: cnpg-cluster-pg17
+    repository: https://cloudnative-pg.github.io/charts
+    version: 0.6.0

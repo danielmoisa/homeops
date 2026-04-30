@@ -1,0 +1,9 @@
+apiVersion: v2
+name: opentelemetry-operator
+description: Kubernetes Operator for OpenTelemetry Collector
+type: application
+version: 0.1.0
+dependencies:
+  - name: opentelemetry-operator
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    version: 0.111.0

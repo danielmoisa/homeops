@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/library/common/values.schema.json
+app-template:
+  configMaps:
+    config:
+      data:
+        TZ: Europe/Paris
+        CACHE_TYPE: file
+        BROWSER_URL: ws://localhost:3000?token=local
+        LOG_LEVEL: info
+        DELETE: "true"
+
+  controllers:
+    app:
+      type: cronjob
+      cronjob:
+        schedule: "0 0 * * *"
+        successfulJobsHistory: 1
+        failedJobsHistory: 1
+        concurrencyPolicy: Forbid
+        timeZone: Europe/Paris
+      strategy: RollingUpdate
+      pod:
+        securityContext:
+          fsGroup: 1000
+      annotations:
+        reloader.stakater.com/auto: "true"
+      containers:
+        app:
+          image:
+            repository: ghcr.io/danielmoisa/scrobble-deduplicator
+            tag: latest@sha256:5e7ff7acc77fc2fa6bea870480af617c1f608828ff6bafc0461fe0cf2fc36934
+          command:
+            - /bin/bash
+            - -c
+            - /app/main --from $(date -d "yesterday" +"%d-%m-%Y")
+          envFrom:
+            - configMapRef:
+                identifier: config
+            - secretRef:
+                name: lastfm-credentials
+      # Long lived sidecars with restartPolicy: Always
+      initContainers:
+        chromium:
+          image:
+            repository: ghcr.io/browserless/chromium
+            tag: latest@sha256:5fc8077ceb90499f920f0896a2f50a1cb95305fa128b7099821e11f0a35fac2c
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            TZ: Europe/Paris
+            TOKEN: local
+            DEBUG: -*
+            TIMEOUT: 600000
+          restartPolicy: Always
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /active?token=local
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /active?token=local
+
+  persistence:
+    data:
+      enabled: true
+      type: persistentVolumeClaim
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      accessMode: ReadWriteOnce
+      size: 200Mi
+      advancedMounts:
+        app:
+          app:
+            - path: /app/data

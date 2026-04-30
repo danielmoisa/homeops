@@ -1,0 +1,13 @@
+apiVersion: v2
+name: immich
+description: High performance self-hosted photo and video management solution
+type: application
+version: 0.1.0
+dependencies:
+  - name: immich
+    repository: https://immich-app.github.io/immich-charts
+    version: 0.11.1
+  - name: cluster
+    alias: cnpg-cluster-vectorchord
+    repository: https://cloudnative-pg.github.io/charts
+    version: 0.6.0

@@ -1,0 +1,150 @@
+opentelemetry-collector:
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.151.0@sha256:d57bfe8eee2378f31cb1193239fbcac521d54a5a071fca2bfc106916a32b892d
+  mode: daemonset
+  service:
+    enabled: true
+  presets:
+    logsCollection:
+      enabled: true
+    kubernetesAttributes:
+      enabled: true
+    kubeletMetrics:
+      enabled: true
+    kubernetesEvents:
+      enabled: true
+    hostMetrics:
+      enabled: true
+  ports:
+    metrics:
+      enabled: true
+    prom-exp:
+      enabled: true
+      containerPort: 9090
+      servicePort: 9090
+      protocol: TCP
+  podMonitor:
+    enabled: true
+    metricsEndpoints:
+      - port: metrics
+      - port: prom-exp
+  prometheusRule:
+    enabled: true
+    defaultRules:
+      enabled: true
+  clusterRole:
+    create: true
+  config:
+    exporters:
+      debug:
+        verbosity: basic
+      debug/detailed:
+        verbosity: detailed
+      otlphttp/loki:
+        endpoint: http://loki-gateway.loki/otlp
+      prometheus:
+        endpoint: ${env:MY_POD_IP}:9090
+        send_timestamps: true
+        enable_open_metrics: true
+        add_metric_suffixes: false
+        metric_expiration: 180m
+        resource_to_telemetry_conversion:
+          enabled: true
+    extensions:
+      # The health_check extension is mandatory for this chart.
+      # Without the health_check extension the collector will fail the readiness and liveliness probes.
+      # The health_check extension can be modified, but should never be removed.
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    processors:
+      batch:
+        send_batch_size: 10000
+        timeout: 1s
+      # Default memory limiter configuration for the collector based on k8s resource limits.
+      memory_limiter:
+        # check_interval is the time between measurements of memory usage.
+        check_interval: 5s
+        # By default limit_mib is set to 80% of ".Values.resources.limits.memory"
+        limit_percentage: 80
+        # By default spike_limit_mib is set to 25% of ".Values.resources.limits.memory"
+        spike_limit_percentage: 25
+      # Merges with the k8sattributes preset.
+      k8sattributes:
+        extract:
+          labels:
+            - tag_name: service.name
+              key: app.kubernetes.io/name
+              from: pod
+            - tag_name: service.version
+              key: app.kubernetes.io/version
+              from: pod
+      filter:
+        error_mode: ignore
+        log_conditions:
+          - IsMatch(log.body, ".*kube-probe.*")
+          - IsMatch(log.body, ".*/health.*")
+          - IsMatch(log.body, ".*/metrics.*")
+          - IsMatch(log.body, ".*/status.*")
+          - IsMatch(log.body, ".*MQTT publish.*")
+          - IsMatch(log.body, ".*/otlp/v1/logs.*")
+          - IsMatch(log.body, ".*revoked lease.*")
+          - resource.attributes["k8s.container.name"] == "sockpuppet-chrome" and log.severity_number < SEVERITY_NUMBER_WARN
+          - IsMatch(resource.attributes["k8s.namespace.name"], "argocd|loki") and log.severity_number < SEVERITY_NUMBER_WARN
+          - IsMatch(log.body, "Client .* closed its connection") and resource.attributes["k8s.container.name"] == "mosquitto"
+          - IsMatch(log.body, "New connection from .* on port .*") and resource.attributes["k8s.container.name"] == "mosquitto"
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: opentelemetry-collector
+              scrape_interval: 120s
+              static_configs:
+                - targets:
+                    - ${env:MY_POD_IP}:8888
+            - job_name: openwrt
+              scrape_interval: 120s
+              static_configs:
+                - targets:
+                    - 192.168.1.1:9100
+    service:
+      telemetry:
+        metrics:
+          address: ${env:MY_POD_IP}:8888
+      extensions:
+        - health_check
+      pipelines:
+        logs:
+          exporters:
+            - debug
+            - otlphttp/loki
+          processors:
+            - filter
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+        metrics:
+          exporters:
+            - debug
+            - prometheus
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+            - prometheus
+        traces:
+          exporters:
+            - debug
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp

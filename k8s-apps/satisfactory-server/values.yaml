@@ -1,0 +1,267 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/library/common/values.schema.json
+app-template:
+  # defaultPodOptions:
+  #   automountServiceAccountToken: false
+  #   securityContext:
+  #     runAsUser: 568
+  #     runAsGroup: 568
+  #     fsGroup: 568
+  #     fsGroupChangePolicy: "OnRootMismatch"
+
+  controllers:
+    # Configure the main controller
+    main:
+      type: statefulset
+      annotations:
+        reloader.stakater.com/auto: "true"
+      replicas: 0
+      containers:
+        # Configure the main application container
+        main:
+          image:
+            repository: wolveix/satisfactory-server
+            tag: v1.9.10@sha256:e103700ae6ae4c50f19dac80eadb2a805c5b885e179ae2a40850e967bf189efd
+          env:
+            TZ: Europe/Paris
+          ports:
+            - name: stsf-udp
+              containerPort: 7777
+              protocol: UDP
+            - name: stsf-tcp
+              containerPort: 7777
+              protocol: TCP
+            - name: frm
+              containerPort: 8080
+              protocol: TCP
+          probes:
+            startup:
+              enabled: true
+              custom: true
+              spec:
+                initialDelaySeconds: 60
+                timeoutSeconds: 1
+                periodSeconds: 5
+                failureThreshold: 30
+                exec:
+                  command:
+                    - /bin/bash
+                    - -c
+                    - chmod +x /healthcheck.sh && if [[ "$(/healthcheck.sh)" != true ]]; then exit 1; fi
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                exec:
+                  command:
+                    - /bin/bash
+                    - -c
+                    - if [[ "$(/healthcheck.sh)" != true ]]; then exit 1; fi
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                exec:
+                  command:
+                    - /bin/bash
+                    - -c
+                    - if [[ "$(/healthcheck.sh)" != true ]]; then exit 1; fi
+        sftp:
+          image:
+            repository: atmoz/sftp
+            tag: latest@sha256:0960390462a4441dbb63698d7c185b76a41ffcee7b78ff4adf275f3e66f9c475
+          env:
+            TZ: Europe/Paris
+          args:
+            - "satisfactory:$5$QXWaERQfCbhenZUo$gmFbTEx0oHuFTeYR1VM9cKNSfbs5o8MFFq9sioFOp14:e:1000:1000"
+          ports:
+            - name: sftp
+              containerPort: 22
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 22
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                tcpSocket:
+                  port: 22
+      statefulset:
+        volumeClaimTemplates:
+          - name: config
+            accessMode: ReadWriteOnce
+            size: 10Gi
+            advancedMounts:
+              main:
+                - path: /config
+              sftp:
+                - path: /home/satisfactory/satisfactory
+    frm:
+      type: deployment
+      annotations:
+        reloader.stakater.com/auto: "true"
+      replicas: 0
+      containers:
+        # Configure the main application container
+        companion:
+          image:
+            repository: featheredtoast/ficsit-remote-monitoring-companion
+            tag: latest@sha256:6c003115f5b748687cdff1dea963d956a005fee6239265e357ea8b14c7bfb18b
+          env:
+            TZ: Europe/Paris
+            FRM_HOST: satisfactory-server-frm
+            FRM_PORT: 8080
+          ports:
+            - name: metrics
+              containerPort: 9000
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /metrics
+                  port: 9000
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /metrics
+                  port: 9000
+        cache:
+          image:
+            repository: featheredtoast/ficsit-remote-monitoring-cache
+            tag: latest@sha256:54a5c77cc05738619d41372e7c86567843c94f65ed56495d1aef1ae60ab731a1
+          env:
+            TZ: Europe/Paris
+            FRM_HOST: satisfactory-server-frm
+            FRM_PORT: 8080
+            PG_HOST:
+              valueFrom:
+                secretKeyRef:
+                  name: satisfactory-server-cnpg-cluster-pg17-app
+                  key: host
+            PG_PASSWORD:
+              valueFrom:
+                secretKeyRef:
+                  name: satisfactory-server-cnpg-cluster-pg17-app
+                  key: password
+            PG_USER:
+              valueFrom:
+                secretKeyRef:
+                  name: satisfactory-server-cnpg-cluster-pg17-app
+                  key: user
+            PG_DB:
+              valueFrom:
+                secretKeyRef:
+                  name: satisfactory-server-cnpg-cluster-pg17-app
+                  key: dbname
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /metrics
+                  port: 9000
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  path: /metrics
+                  port: 9000
+
+  service:
+    # Configure a service for the main application
+    main:
+      controller: main
+      type: LoadBalancer
+      ports:
+        stsf-udp:
+          port: 7777
+          protocol: UDP
+        stsf-tcp:
+          port: 7777
+          protocol: TCP
+    frm:
+      controller: main
+      ports:
+        frm:
+          port: 8080
+    sftp:
+      controller: main
+      type: LoadBalancer
+      ports:
+        sftp:
+          targetPort: sftp
+          port: 2222
+    frmcompanion:
+      controller: frm
+      ports:
+        metrics:
+          port: 9000
+
+  serviceMonitor:
+    frm:
+      enabled: true
+      serviceName: satisfactory-server-frmcompanion
+      endpoints:
+        - port: metrics
+          scheme: http
+          path: /metrics
+          interval: 15s
+          scrapeTimeout: 10s
+
+cnpg-cluster-pg17:
+  type: postgresql
+  mode: standalone
+  version:
+    postgresql: "17"
+  cluster:
+    instances: 1
+    imageCatalogRef:
+      kind: ClusterImageCatalog
+      name: postgresql
+    storage:
+      size: 10Gi
+    annotations:
+      cnpg.io/hibernation: "on"
+    resources: {}
+    primaryUpdateMethod: switchover
+    primaryUpdateStrategy: unsupervised
+    logLevel: "info"
+    # monitoring:
+    #   enabled: true
+    #   podMonitor:
+    #     enabled: true
+    enablePDB: false
+    postgresql: {}
+    initdb:
+      database: frm
+  recovery:
+    method: import
+    import:
+      type: microservice
+      databases: ["frm"]
+      schemaOnly: true
+      source:
+        host: satisfactory-server-cnpg-cluster-rw
+        username: frm
+        database: frm
+        passwordSecret:
+          name: satisfactory-server-cnpg-cluster-app
+          key: password
+        sslKeySecret:
+          name: satisfactory-server-cnpg-cluster-replication
+          key: tls.key
+        sslCertSecret:
+          name: satisfactory-server-cnpg-cluster-replication
+          key: tls.crt
+        sslRootCertSecret:
+          name: satisfactory-server-cnpg-cluster-ca
+          key: ca.crt

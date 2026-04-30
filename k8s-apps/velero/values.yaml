@@ -1,0 +1,372 @@
+velero:
+  image:
+    pullPolicy: IfNotPresent
+    imagePullSecrets: []
+  dnsPolicy: ClusterFirst
+  initContainers:
+    - name: velero-plugin-for-aws
+      image: velero/velero-plugin-for-aws:v1.14.0@sha256:7e82f717f44e89671212e0dfce7e061321c386ea84a33bca64a671670ca6c278
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - mountPath: /target
+          name: plugins
+  livenessProbe:
+    httpGet:
+      path: /metrics
+      port: http-monitoring
+      scheme: HTTP
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  readinessProbe:
+    httpGet:
+      path: /metrics
+      port: http-monitoring
+      scheme: HTTP
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 5
+  extraObjects:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      metadata:
+        name: backblaze-credentials
+      spec:
+        secretStoreRef:
+          kind: ClusterSecretStore
+          name: openbao-secret-store
+        target:
+          name: backblaze-credentials
+          creationPolicy: Owner
+        dataFrom:
+          - extract:
+              key: velero/backblaze-credentials
+  metrics:
+    enabled: true
+    scrapeInterval: 120s
+    scrapeTimeout: 10s
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8085"
+      prometheus.io/path: "/metrics"
+    serviceMonitor:
+      autodetect: true
+      enabled: true
+      annotations: {}
+      additionalLabels: {}
+    nodeAgentPodMonitor:
+      autodetect: true
+      enabled: true
+      annotations: {}
+      additionalLabels: {}
+    prometheusRule:
+      autodetect: true
+      enabled: true
+      spec:
+        # - alert: VeleroBackupPartialFailures
+        #   annotations:
+        #     message: Velero backup {{ $labels.schedule }} has {{ $value | humanizePercentage }} partially failed backups.
+        #   expr: |-
+        #     velero_backup_partial_failure_total{schedule!=""} / velero_backup_attempt_total{schedule!=""} > 0.25
+        #   for: 15m
+        #   labels:
+        #     severity: warning
+        # - alert: VeleroBackupFailures
+        #   annotations:
+        #     message: Velero backup {{ $labels.schedule }} has {{ $value | humanizePercentage }} failed backups.
+        #   expr: |-
+        #     velero_backup_failure_total{schedule!=""} / velero_backup_attempt_total{schedule!=""} > 0.25
+        #   for: 15m
+        #   labels:
+        #     severity: warning
+        - alert: VeleroSuccessfulBackupTooOld
+          annotations:
+            message: Velero successful backup for schedule {{ $labels.schedule }} is older than 24 hours.
+          expr: |
+            (time() - velero_backup_last_successful_timestamp{schedule!=""}) > 86400 and velero_backup_last_status{schedule!=""} != 1
+          for: 15m
+          labels:
+            severity: warning
+
+  kubectl:
+    image:
+      repository: public.ecr.aws/bitnami/kubectl
+
+  upgradeCRDs: true
+  cleanUpCRDs: false
+
+  configuration:
+    backupStorageLocation:
+      - name: v2
+        provider: aws
+        bucket: velero-backup-tch
+        caCert:
+        prefix: v2
+        default: true
+        validationFrequency: 24h
+        accessMode: ReadWrite
+        credential:
+          name: backblaze-credentials
+          key: config
+        config:
+          region: eu-central-003
+          s3ForcePathStyle: true
+          s3Url: https://s3.eu-central-003.backblazeb2.com
+          checksumAlgorithm: ""
+      - name: versity-gw-v2
+        provider: aws
+        bucket: velero
+        caCert:
+        prefix: v2
+        default: false
+        validationFrequency: 24h
+        accessMode: ReadWrite
+        credential:
+          name: versity-gw-credentials
+          key: config
+        config:
+          region: us-east-1
+          s3ForcePathStyle: true
+          s3Url: http://versity-gw-nfs.versity-gw:7070
+          checksumAlgorithm: ""
+    volumeSnapshotLocation:
+      # name is the name of the volume snapshot location where snapshots are being taken. Required.
+      - name:
+        # provider is the name for the volume snapshot provider.
+        provider: ""
+        credential:
+          # name of the secret used by this volumeSnapshotLocation.
+          name:
+          # name of key that contains the secret data to be used.
+          key:
+        # Additional provider-specific configuration. See link above
+        # for details of required/optional fields for your provider.
+        config: {}
+        #    region:
+        #    apiTimeout:
+        #    resourceGroup:
+        #    The ID of the subscription where volume snapshots should be stored, if different from the cluster’s subscription. If specified, also requires `configuration.volumeSnapshotLocation.config.resourceGroup`to be set. (Azure only)
+        #    subscriptionId:
+        #    incremental:
+        #    snapshotLocation:
+        #    project:
+
+        # annotations allows adding arbitrary annotations to this VolumeSnapshotLocation resource. Optional.
+        annotations: {}
+    repositoryMaintenanceJob:
+      repositoryConfigData:
+        name: "velero-repo-maintenance"
+        global:
+          keepLatestMaintenanceJobs: 0
+    # `velero server` default: kopia
+    uploaderType:
+    # `velero server` default: 1m
+    backupSyncPeriod: 24h
+    # `velero server` default: 4h
+    fsBackupTimeout:
+    # `velero server` default: 30
+    clientBurst:
+    # `velero server` default: 500
+    clientPageSize:
+    # `velero server` default: 20.0
+    clientQPS:
+    # Name of the default backup storage location. Default: default
+    defaultBackupStorageLocation:
+    # The default duration any single item operation can take before timing out, especially important for large volume schedules. Default 4h
+    defaultItemOperationTimeout:
+    # How long to wait by default before backups can be garbage collected. Default: 72h
+    defaultBackupTTL:
+    # Name of the default volume snapshot location.
+    defaultVolumeSnapshotLocations:
+    # `velero server` default: empty
+    disableControllers:
+    # `velero server` default: false
+    disableInformerCache: false
+    # `velero server` default: 1h
+    garbageCollectionFrequency:
+    # Set log-format for Velero pod. Default: text. Other option: json.
+    logFormat:
+    # Set log-level for Velero pod. Default: info. Other options: debug, warning, error, fatal, panic.
+    logLevel:
+    # The address to expose prometheus metrics. Default: :8085
+    metricsAddress:
+    # Directory containing Velero plugins. Default: /plugins
+    pluginDir:
+    # The address to expose the pprof profiler. Default: localhost:6060
+    profilerAddress:
+    # `velero server` default: false
+    restoreOnlyMode:
+    # `velero server` default: customresourcedefinitions,namespaces,storageclasses,volumesnapshotclass.snapshot.storage.k8s.io,volumesnapshotcontents.snapshot.storage.k8s.io,volumesnapshots.snapshot.storage.k8s.io,persistentvolumes,persistentvolumeclaims,secrets,configmaps,serviceaccounts,limitranges,pods,replicasets.apps,clusterclasses.cluster.x-k8s.io,clusters.cluster.x-k8s.io,clusterresourcesets.addons.cluster.x-k8s.io
+    restoreResourcePriorities:
+    # `velero server` default: 1m
+    storeValidationFrequency:
+    # How long to wait on persistent volumes and namespaces to terminate during a restore before timing out. Default: 10m
+    terminatingResourceTimeout:
+    # Bool flag to configure Velero server to move data by default for all snapshots supporting data movement. Default: false
+    defaultSnapshotMoveData:
+    # Comma separated list of velero feature flags. default: empty
+    # features: EnableCSI
+    features:
+    # `velero server` default: velero
+    namespace:
+    # additional command-line arguments that will be passed to the `velero server`
+    # e.g.: extraArgs: ["--foo=bar"]
+    extraArgs: []
+
+    # additional key/value pairs to be used as environment variables such as "AWS_CLUSTER_NAME: 'yourcluster.domain.tld'"
+    extraEnvVars: []
+
+    # Set true for backup all pod volumes without having to apply annotation on the pod when used file system backup Default: false.
+    defaultVolumesToFsBackup: true
+
+    # How often repository maintain is run for repositories by default.
+    defaultRepoMaintainFrequency: 24h
+
+  ##
+  ## End of backup/snapshot location settings.
+  ##
+
+  ##
+  ## Settings for additional Velero resources.
+  ##
+
+  rbac:
+    create: true
+    clusterAdministrator: true
+    clusterAdministratorName: cluster-admin
+
+  serviceAccount:
+    server:
+      create: true
+      name:
+      annotations:
+      labels:
+      imagePullSecrets: []
+
+  credentials:
+    useSecret: true
+    existingSecret: backblaze-credentials
+    extraSecretRef: ""
+
+  backupsEnabled: true
+  snapshotsEnabled: false
+  deployNodeAgent: true
+
+  nodeAgent:
+    podVolumePath: /var/lib/k0s/kubelet/pods
+    priorityClassName: ""
+    useScratchEmptyDir: true
+    dnsPolicy: ClusterFirst
+    podSecurityContext:
+      runAsUser: 0
+
+  schedules:
+    v2:
+      disabled: false
+      schedule: "0 2 * * *"
+      useOwnerReferencesInBackup: false
+      paused: false
+      template:
+        storageLocation: v2
+        includedNamespaces:
+          - arr-stack
+          - audiobookshelf
+          - calibre-web
+          - changedetection
+          - gitea
+          - home-assistant
+          - immich
+          - nextcloud
+          - paperless-ngx
+          - pocket-id
+          - vaultwarden
+          - versity-gw
+          - zigbee2mqtt
+        includedResources:
+          - po
+          - pv
+          - pvc
+          - cm
+          - sa
+          - secret
+        ttl: 720h
+        resourcePolicy:
+          apiGroup: ""
+          kind: ConfigMap
+          name: volume-policy
+    versity-gw-v2:
+      disabled: false
+      schedule: "0 */4 * * *"
+      useOwnerReferencesInBackup: false
+      paused: false
+      template:
+        storageLocation: versity-gw-v2
+        includedNamespaces:
+          - arr-stack
+          - calibre-web
+          - changedetection
+          - gitea
+          - home-assistant
+          - immich
+          - nextcloud
+          - paperless-ngx
+          - pocket-id
+          - vaultwarden
+          - versity-gw
+          - zigbee2mqtt
+        includedResources:
+          - po
+          - pv
+          - pvc
+          - cm
+          - sa
+          - secret
+        ttl: 168h
+        resourcePolicy:
+          apiGroup: ""
+          kind: ConfigMap
+          name: volume-policy
+
+  # Velero ConfigMaps.
+  # Eg:
+  # configMaps:
+  # See: https://velero.io/docs/v1.11/file-system-backup/
+  #   fs-restore-action-config:
+  #     labels:
+  #       velero.io/plugin-config: ""
+  #       velero.io/pod-volume-restore: RestoreItemAction
+  #     data:
+  #       image: velero/velero-restore-helper:v1.10.2
+  #       cpuRequest: 200m
+  #       memRequest: 128Mi
+  #       cpuLimit: 200m
+  #       memLimit: 128Mi
+  #       secCtx: |
+  #         capabilities:
+  #           drop:
+  #           - ALL
+  #           add: []
+  #         allowPrivilegeEscalation: false
+  #         readOnlyRootFilesystem: true
+  #         runAsUser: 1001
+  #         runAsGroup: 999
+  configMaps: {}
+    # remove-argocd-instance-label:
+    #   labels: {}
+    #   data:
+    #     version: v1
+    #     resourceModifierRules:
+    #       - conditions:
+    #           groupResource: "*.*"
+    #           resourceNameRegex: "^.*$"
+    #         patches:
+    #           - operation: remove
+    #             path: "/metadata/labels/argocd.argoproj.io~1instance"
+
+  ##
+  ## End of additional Velero resource settings.
+  ##

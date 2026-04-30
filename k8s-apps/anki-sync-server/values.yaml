@@ -1,0 +1,97 @@
+app-template:
+  controllers:
+    main:
+      type: deployment
+      strategy: RollingUpdate
+      labels:
+        sablier.enable: "true"
+        sablier.group: "{{ .Release.Name }}"
+      annotations:
+        reloader.stakater.com/auto: "true"
+      containers:
+        main:
+          image:
+            repository: johngong/anki-sync-server
+            tag: 25.09.2@sha256:3c30155e1391ada03ca3f521434f0d4fe0214c094520af0569e0e363606ebb26
+          env:
+            TZ: Europe/Paris
+          envFrom:
+            - secretRef:
+                name: anki-sync-server-creds
+          ports:
+            - name: http
+              containerPort: 8080
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /health
+            readiness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet:
+                  port: http
+                  path: /health
+
+  service:
+    main:
+      controller: main
+      type: ClusterIP
+      ports:
+        http:
+          port: 8080
+
+  ingress:
+    main:
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt
+        external-dns.alpha.kubernetes.io/target: home.terence.cloud
+        traefik.ingress.kubernetes.io/router.middlewares: traefik-modsecurity@kubernetescrd,{{ .Release.Namespace }}-sablier@kubernetescrd
+      className: "traefik"
+      hosts:
+        - host: &host ankss.terence.cloud
+          paths:
+            - path: /
+              pathType: Prefix
+              service:
+                identifier: main
+                port: http
+      tls:
+        - secretName: anki-sync-server-tls
+          hosts:
+            - *host
+
+  persistence:
+    config:
+      enabled: true
+      type: persistentVolumeClaim
+      annotations:
+        helm.sh/resource-policy: keep
+        argocd.argoproj.io/sync-options: Delete=false
+      accessMode: ReadWriteOnce
+      size: 1Gi
+      globalMounts:
+        - path: /config
+
+  rawResources:
+    sablier:
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      forceRename: sablier
+      spec:
+        spec:
+          plugin:
+            sablier:
+              dynamic:
+                displayName: "{{ .Release.Name }}"
+                refreshFrequency: 5s
+                showDetails: true
+                theme: shuffle
+              sablierUrl: http://sablier-sablier.sablier:10000
+              sessionDuration: 10m
+              ignoreUserAgent: curl
+              group: "{{ .Release.Name }}"

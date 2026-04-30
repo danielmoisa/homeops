@@ -1,0 +1,14 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: configarr-secrets
+spec:
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao-secret-store
+  target:
+    name: configarr-secrets
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: arr-stack/configarr-secrets

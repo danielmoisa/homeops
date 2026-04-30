@@ -1,0 +1,16 @@
+apiVersion: v2
+name: nextcloud
+description: A safe home for all your data
+type: application
+version: 0.1.0
+dependencies:
+  - name: nextcloud
+    repository: https://nextcloud.github.io/helm/
+    version: 9.0.5
+  - name: cluster
+    alias: cnpg-cluster
+    repository: https://cloudnative-pg.github.io/charts
+    version: 0.6.0
+  - name: valkey
+    repository: https://valkey.io/valkey-helm/
+    version: 0.9.3

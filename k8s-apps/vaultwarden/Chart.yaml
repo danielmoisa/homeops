@@ -1,0 +1,13 @@
+apiVersion: v2
+name: vaultwarden
+description: Unofficial Bitwarden compatible server written in Rust
+type: application
+version: 0.1.0
+dependencies:
+  - name: vaultwarden
+    repository: https://guerzon.github.io/vaultwarden
+    version: 0.35.1
+  - name: cluster
+    alias: cnpg-cluster
+    repository: https://cloudnative-pg.github.io/charts
+    version: 0.6.0
