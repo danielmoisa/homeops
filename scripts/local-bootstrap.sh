@@ -30,7 +30,7 @@ echo "Installing External Secrets Operator..."
 cd "$PROJECT_ROOT/k8s-apps/external-secrets"
 helm dependency update
 helm template external-secrets --namespace external-secrets . | \
-  kubectl apply --server-side --force-conflicts --namespace external-secrets -f -
+  kubectl apply --server-side --force-conflicts --namespace external-secrets -f - || true
 
 echo "Waiting for External Secrets CRDs to be established..."
 kubectl wait --for=condition=Established \
@@ -46,7 +46,6 @@ kubectl rollout status deployment/external-secrets-webhook \
 echo "Re-applying External Secrets to pick up custom resources..."
 helm template external-secrets --namespace external-secrets . | \
   kubectl apply --server-side --force-conflicts --namespace external-secrets -f -
-
 echo "Installing ArgoCD..."
 cd "$PROJECT_ROOT/k8s-apps/argocd"
 helm dependency update
