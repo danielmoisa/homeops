@@ -8,6 +8,8 @@ spec:
   generators:
     - list:
         elements:
+          - name: anki-sync-server
+            scaleToZero: true
           - name: anubis
           - name: argocd
             serverSideApply: true
