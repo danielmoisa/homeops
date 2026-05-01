@@ -8,16 +8,35 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  sources:
-    - repoURL: https://charts.min.io
-      chart: minio
-      targetRevision: "5.4.0"
-      helm:
-        valueFiles:
-          - $values/infrastructure/minio/values.yaml
-    - repoURL: https://github.com/danielmoisa/homeops
-      targetRevision: HEAD
-      ref: values
+  source:
+    repoURL: https://charts.min.io
+    chart: minio
+    targetRevision: "5.4.0"
+    helm:
+      valuesObject:
+        mode: standalone
+        rootUser: "minioadmin"
+        rootPassword: "minioadmin"
+        replicas: 1
+        persistence:
+          enabled: true
+          storageClass: "local-path"
+          size: 10Gi
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 50m
+          limits:
+            memory: 512Mi
+        buckets:
+          - name: velero
+            policy: none
+          - name: loki
+            policy: none
+        consoleService:
+          type: ClusterIP
+        service:
+          type: ClusterIP
   destination:
     server: https://kubernetes.default.svc
     namespace: minio
