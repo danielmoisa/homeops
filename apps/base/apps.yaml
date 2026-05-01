@@ -79,61 +79,74 @@ spec:
       - ServerSideApply=true # needed for large CRDs in kube-prometheus-stack
 ---
 # apps/base/loki.yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: loki
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  sources:
-    - repoURL: https://grafana.github.io/helm-charts
-      chart: loki
-      targetRevision: "6.53.0"
-      helm:
-        valueFiles:
-          - $values/infrastructure/loki/values.yaml
-    - repoURL: https://github.com/danielmoisa/homeops
-      targetRevision: HEAD
-      ref: values
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+source:
+  repoURL: https://grafana.github.io/helm-charts
+  chart: loki
+  targetRevision: "6.53.0"
+  helm:
+    valuesObject:
+      deploymentMode: SingleBinary
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        storage:
+          type: s3
+          s3:
+            endpoint: http://minio.minio.svc.cluster.local:9000
+            bucketnames: loki
+            region: us-east-1
+            access_key_id: minioadmin
+            secret_access_key: minioadmin
+            s3ForcePathStyle: true
+            insecure: true
+        schemaConfig:
+          configs:
+            - from: "2024-01-01"
+              store: tsdb
+              object_store: s3
+              schema: v13
+              index:
+                prefix: loki_index_
+                period: 24h
+      singleBinary:
+        replicas: 1
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 50m
+          limits:
+            memory: 512Mi
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi
+      read:
+        replicas: 0
+      write:
+        replicas: 0
+      backend:
+        replicas: 0
 ---
 # apps/base/keycloak.yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: keycloak
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  sources:
-    - repoURL: https://charts.bitnami.com/bitnami
-      chart: keycloak
-      targetRevision: "24.4.11"
-      helm:
-        valueFiles:
-          - $values/infrastructure/keycloak/values.yaml
-    - repoURL: https://github.com/danielmoisa/homeops
-      targetRevision: HEAD
-      ref: values
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: keycloak
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+source:
+  repoURL: https://charts.bitnami.com/bitnami
+  chart: keycloak
+  targetRevision: "24.4.11"
+  helm:
+    valuesObject:
+      auth:
+        adminUser: admin
+        adminPassword: "admin"
+      postgresql:
+        enabled: false
+      production: false
+      proxy: edge
+      resources:
+        requests:
+          memory: 512Mi
+          cpu: 100m
+        limits:
+          memory: 1Gi
+      service:
+        type: ClusterIP
