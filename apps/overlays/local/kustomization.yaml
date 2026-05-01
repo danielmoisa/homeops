@@ -1,0 +1,11 @@
+# apps/overlays/local/kustomization.yaml
+# Comment out anything you don't want to deploy yet.
+# Recommended order: cert-manager first, then the rest.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base/cert-manager.yaml
+  - ../../base/vault.yaml
+  - ../../base/apps.yaml   # minio, prometheus, loki, keycloak

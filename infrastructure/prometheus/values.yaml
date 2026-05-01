@@ -1,0 +1,67 @@
+# infrastructure/prometheus/values.yaml
+# Slimmed-down kube-prometheus-stack for a single-node local cluster
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false          # K3S uses embedded etcd, scraping differs
+    kubeScheduler: false
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 1Gi
+
+grafana:
+  enabled: true
+  adminPassword: "admin"   # change if needed
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  # To access:
+  # kubectl port-forward svc/prometheus-grafana -n monitoring 3000:80
+  # http://localhost:3000 — user: admin / pass: admin
+
+# Disable components that won't work well on a single node laptop
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false   # K3S uses kube-proxy alternative
+
+nodeExporter:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true

@@ -1,0 +1,31 @@
+# infrastructure/vault/values.yaml
+# Dev mode — NOT for production. Vault starts unsealed with a root token of "root".
+# All data is in-memory (lost on pod restart). Good enough for local testing.
+
+global:
+  dev: true
+
+server:
+  dev:
+    enabled: true
+    devRootToken: "root"
+  standalone:
+    enabled: true
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+
+# Disable HA and storage backend for local
+ha:
+  enabled: false
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+
+# To access UI:
+# kubectl port-forward svc/vault -n vault 8200:8200
+# Open http://localhost:8200 and use token: root

@@ -1,0 +1,26 @@
+# bootstrap/root-app.yaml
+# This single manifest tells ArgoCD to manage everything else.
+# Replace <YOUR_REPO_URL> with your fork's URL.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/danielmoisa/homeops
+    targetRevision: HEAD
+    path: apps/overlays/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

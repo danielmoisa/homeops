@@ -1,0 +1,39 @@
+# infrastructure/minio/values.yaml
+# Single-node Minio for local testing
+
+mode: standalone
+
+rootUser: "minioadmin"
+rootPassword: "minioadmin"   # change this if exposing beyond localhost
+
+replicas: 1
+
+persistence:
+  enabled: true
+  storageClass: "local-path"   # K3S default storage class
+  size: 10Gi
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 50m
+  limits:
+    memory: 512Mi
+
+# Create default buckets on startup
+buckets:
+  - name: velero
+    policy: none
+  - name: loki
+    policy: none
+  - name: tempo
+    policy: none
+
+# To access console:
+# kubectl port-forward svc/minio-console -n minio 9001:9001
+# Open http://localhost:9001 — user: minioadmin / pass: minioadmin
+consoleService:
+  type: ClusterIP
+
+service:
+  type: ClusterIP

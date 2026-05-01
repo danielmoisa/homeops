@@ -1,9 +1,0 @@
-apiVersion: v2
-name: mosquitto
-description: Open source MQTT broker
-type: application
-version: 0.1.0
-dependencies:
-  - name: mosquitto
-    repository: oci://oci.trueforge.org/truecharts
-    version: 18.1.1

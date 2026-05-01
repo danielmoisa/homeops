@@ -1,0 +1,38 @@
+# infrastructure/cert-manager/cluster-issuer.yaml
+# Self-signed ClusterIssuer for local development.
+# Apply this AFTER cert-manager is running:
+#   kubectl apply -f infrastructure/cert-manager/cluster-issuer.yaml
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# A local CA backed by a self-signed cert — use this as the issuer for services
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: local-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: picluster-local-ca
+  secretName: local-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local-ca-issuer
+spec:
+  ca:
+    secretName: local-ca-secret

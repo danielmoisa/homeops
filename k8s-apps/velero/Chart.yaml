@@ -1,9 +1,0 @@
-apiVersion: v2
-name: velero
-description: Backup and migrate Kubernetes applications and their persistent volumes
-type: application
-version: 0.1.0
-dependencies:
-  - name: velero
-    repository: https://vmware-tanzu.github.io/helm-charts
-    version: 12.0.1
