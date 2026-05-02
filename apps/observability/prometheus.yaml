@@ -18,7 +18,6 @@ spec:
           rules:
             etcd: false
             kubeScheduler: false
-
         alertmanager:
           enabled: true
           alertmanagerSpec:
@@ -27,7 +26,6 @@ spec:
                 memory: 64Mi
               limits:
                 memory: 128Mi
-
         prometheus:
           prometheusSpec:
             retention: 7d
@@ -50,7 +48,6 @@ spec:
             ingressClassName: nginx
             hosts:
               - prometheus.local
-
         grafana:
           enabled: true
           adminPassword: "admin"
@@ -69,14 +66,11 @@ spec:
             ingressClassName: nginx
             hosts:
               - grafana.local
-          # Pre-configure Loki as a datasource
           additionalDataSources:
             - name: Loki
               type: loki
               url: http://loki.monitoring.svc.cluster.local:3100
               access: proxy
-
-        # Disable components that don't apply to k3d
         kubeEtcd:
           enabled: false
         kubeControllerManager:

@@ -5,15 +5,12 @@ metadata:
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
-  annotations:
-    # Must sync after cert-manager CRDs are ready
-    argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
   source:
     repoURL: https://github.com/danielmoisa/homeops
     targetRevision: HEAD
-    path: apps/infrastructure/manifests/cert-issuer
+    path: manifests/cert-issuer
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager

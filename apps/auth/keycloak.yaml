@@ -16,7 +16,6 @@ spec:
         auth:
           adminUser: admin
           adminPassword: "admin"
-        # Use embedded H2 for local dev — swap to postgresql block for persistence
         postgresql:
           enabled: false
         production: false
@@ -33,3 +32,12 @@ spec:
           enabled: true
           ingressClassName: nginx
           hostname: keycloak.local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keycloak
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

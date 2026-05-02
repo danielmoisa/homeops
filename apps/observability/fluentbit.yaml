@@ -20,7 +20,6 @@ spec:
           limits:
             memory: 128Mi
         config:
-          # Collect all pod logs
           inputs: |
             [INPUT]
                 Name              tail
@@ -29,7 +28,6 @@ spec:
                 multiline.parser  docker, cri
                 Mem_Buf_Limit     5MB
                 Skip_Long_Lines   On
-          # Parse Kubernetes metadata
           filters: |
             [FILTER]
                 Name                kubernetes
@@ -42,7 +40,6 @@ spec:
                 Keep_Log            Off
                 K8S-Logging.Parser  On
                 K8S-Logging.Exclude Off
-          # Ship to Loki
           outputs: |
             [OUTPUT]
                 Name            loki
