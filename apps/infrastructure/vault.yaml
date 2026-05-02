@@ -7,6 +7,12 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: vault-agent-injector-cfg
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
   source:
     repoURL: https://helm.releases.hashicorp.com
     chart: vault
