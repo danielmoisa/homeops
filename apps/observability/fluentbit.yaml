@@ -1,68 +1,45 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: fluentbit
-  namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  source:
-    repoURL: https://fluent.github.io/helm-charts
-    chart: fluent-bit
-    targetRevision: 0.47.9
-    helm:
-      valuesObject:
-        resources:
-          requests:
-            cpu: 10m
-            memory: 64Mi
-          limits:
-            memory: 128Mi
-        volumes:
-          - name: etcmachineid
-            hostPath:
-              path: /etc/machine-id
-              type: FileOrCreate
-        volumeMounts:
-          - name: etcmachineid
-            mountPath: /etc/machine-id
-            readOnly: true
-        config:
-          inputs: |
-            [INPUT]
-                Name              tail
-                Tag               kube.*
-                Path              /var/log/containers/*.log
-                multiline.parser  docker, cri
-                Mem_Buf_Limit     5MB
-                Skip_Long_Lines   On
-          filters: |
-            [FILTER]
-                Name                kubernetes
-                Match               kube.*
-                Kube_URL            https://kubernetes.default.svc:443
-                Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-                Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
-                Kube_Tag_Prefix     kube.var.log.containers.
-                Merge_Log           On
-                Keep_Log            Off
-                K8S-Logging.Parser  On
-                K8S-Logging.Exclude Off
-          outputs: |
-            [OUTPUT]
-                Name            loki
-                Match           kube.*
-                Host            loki.monitoring.svc.cluster.local
-                Port            3100
-                Labels          job=fluentbit, namespace=$kubernetes['namespace_name'], pod=$kubernetes['pod_name']
-                Auto_Kubernetes_Labels On
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: monitoring
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
+valuesObject:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  daemonSetVolumes:
+    - name: etcmachineid
+      hostPath:
+        path: /etc/machine-id
+        type: FileOrCreate
+  daemonSetVolumeMounts:
+    - name: etcmachineid
+      mountPath: /etc/machine-id
+      readOnly: true
+  config:
+    inputs: |
+      [INPUT]
+          Name              tail
+          Tag               kube.*
+          Path              /var/log/containers/*.log
+          multiline.parser  docker, cri
+          Mem_Buf_Limit     5MB
+          Skip_Long_Lines   On
+    filters: |
+      [FILTER]
+          Name                kubernetes
+          Match               kube.*
+          Kube_URL            https://kubernetes.default.svc:443
+          Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+          Kube_Tag_Prefix     kube.var.log.containers.
+          Merge_Log           On
+          Keep_Log            Off
+          K8S-Logging.Parser  On
+          K8S-Logging.Exclude Off
+    outputs: |
+      [OUTPUT]
+          Name            loki
+          Match           kube.*
+          Host            loki.monitoring.svc.cluster.local
+          Port            3100
+          Labels          job=fluentbit, namespace=$kubernetes['namespace_name'], pod=$kubernetes['pod_name']
+          Auto_Kubernetes_Labels On
