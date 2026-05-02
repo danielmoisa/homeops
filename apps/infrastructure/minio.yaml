@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.min.io
+    chart: minio
+    targetRevision: 5.4.0
+    helm:
+      valuesObject:
+        mode: standalone
+        rootUser: "minioadmin"
+        rootPassword: "minioadmin"
+        replicas: 1
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 20Gi
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        buckets:
+          - name: velero
+            policy: none
+          - name: loki
+            policy: none
+        ingress:
+          enabled: true
+          ingressClassName: nginx
+          hosts:
+            - minio.local
+        consoleIngress:
+          enabled: true
+          ingressClassName: nginx
+          hosts:
+            - minio-console.local
+        service:
+          type: ClusterIP
+        consoleService:
+          type: ClusterIP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minio
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

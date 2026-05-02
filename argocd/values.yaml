@@ -1,16 +1,6 @@
-# argocd/values.yaml
-# Minimal ArgoCD config for local single-node cluster
-
-global:
-  domain: argocd.local
-
 configs:
   params:
-    # Disable TLS on argocd-server (we terminate at ingress or use port-forward)
     server.insecure: true
-  cm:
-    # Allow helm values files in subfolders
-    helm.valuesFileSchemes: secrets+gpg-import, secrets+gpg-import-kubernetes, secrets+age-import, secrets+age-import-kubernetes, secrets,secrets+literal, https
 
 server:
   replicas: 1
@@ -36,7 +26,7 @@ applicationSet:
       memory: 64Mi
 
 notifications:
-  enabled: false   # disable to save resources on local
+  enabled: false
 
 redis:
   resources:
@@ -45,4 +35,4 @@ redis:
       memory: 64Mi
 
 dex:
-  enabled: false   # enable later if you want SSO via Keycloak
+  enabled: false

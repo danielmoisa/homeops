@@ -1,74 +1,96 @@
-# picluster-local
+# homeops
 
-A single-node K3S homelab cluster for local testing on Ubuntu x86, based on
-[PiCluster](https://picluster.ricsanfre.com) but simplified for a laptop/desktop setup.
+Personal Kubernetes homelab running on k3d (single Ubuntu node).
+GitOps managed with ArgoCD, all apps deployed via Helm.
 
-**Key differences from the original:**
-- Single-node K3S (no multi-node, no Kube-VIP)
-- ArgoCD instead of FluxCD for GitOps
-- Helm-based deployments throughout
-- `local-path` storage instead of Longhorn
-- No Istio, no Kafka (can be added later)
-- No cloud-init / PXE (direct K3S install)
+## Architecture
 
-## Stack
+```
+┌─ GitOps ──────────────────────────────────────────────┐
+│  ArgoCD                                                │
+├─ Kubernetes ──────────────────────────────────────────┤
+│  K3D (K3S in Docker)                                   │
+├─ Infrastructure ──────────────────────────────────────┤
+│  ingress-nginx  │  cert-manager  │  vault  │  minio   │
+│  external-secrets-operator                             │
+├─ Auth ────────────────────────────────────────────────┤
+│  Keycloak                                              │
+├─ Observability ───────────────────────────────────────┤
+│  Prometheus  │  Grafana  │  Loki  │  Fluentbit         │
+├─ Backup ──────────────────────────────────────────────┤
+│  Velero + Restic → Minio (S3)                          │
+└───────────────────────────────────────────────────────┘
+```
 
-| Category        | Tool                        |
-|-----------------|-----------------------------|
-| Kubernetes      | K3S                         |
-| GitOps          | ArgoCD                      |
-| Certificates    | Cert-Manager (self-signed)  |
-| Secrets         | Vault (dev mode)            |
-| Object Storage  | Minio                       |
-| Monitoring      | Prometheus + Grafana        |
-| Logging         | Loki + Grafana              |
-| IAM             | Keycloak                    |
-| Backup          | Velero + Restic             |
+## What can be added on a multi-cluster
 
-## Requirements
+| Component      | Reason                                       |
+|----------------|----------------------------------------------|
+| Longhorn       | Needs multi-node — using local-path instead  |
+| Kube-VIP       | No bare metal LB needed on k3d               |
+| Envoy Gateway  | Using ingress-nginx (simpler)                |
+| External DNS   | No real DNS needed locally                   |
+| Istio          | Too heavy for single node                    |
+| Kafka          | Not needed for local testing                 |
+| Elasticsearch  | Too heavy — Loki covers logging              |
+| Kibana         | Grafana covers dashboards                    |
+| Fluentd        | Fluentbit is enough for single node          |
+| Tempo          | Skipped per user preference                  |
+| CloudNative-PG | Not needed yet                               |
+| MongoDB        | Not needed yet                               |
+| Ansible        | k3d replaces bare metal node configuration   |
+| OpenTofu       | Everything runs in-cluster, nothing external |
 
-- Ubuntu 22.04+ / 24.04
-- 8GB RAM minimum (16GB recommended)
-- ~20GB free disk
-- `kubectl`, `helm`, `argocd` CLI installed
+## Repo Structure
+
+```
+homeops/
+├── bootstrap/
+│   ├── install-argocd.sh     # Run once to install ArgoCD
+│   └── root-app.yaml         # Run once to bootstrap everything else
+├── argocd/
+│   └── values.yaml           # ArgoCD Helm values
+├── apps/
+│   ├── infrastructure/
+│   │   ├── ingress-nginx.yaml
+│   │   ├── cert-manager.yaml
+│   │   ├── cert-issuer.yaml
+│   │   ├── vault.yaml
+│   │   ├── external-secrets.yaml
+│   │   └── minio.yaml
+│   ├── auth/
+│   │   └── keycloak.yaml
+│   ├── observability/
+│   │   ├── prometheus.yaml
+│   │   ├── loki.yaml
+│   │   └── fluentbit.yaml
+│   └── backup/
+│       └── velero.yaml
+└── docs/
+    └── port-forwards.md
+```
 
 ## Quick Start
 
 ```bash
-# 1. Install K3S
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+# 1. Install k3d
+curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 
-# 2. Set up kubeconfig
-mkdir -p ~/.kube
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $USER:$USER ~/.kube/config
+# 2. Create cluster
+k3d cluster create homeops \
+  --agents 1 \
+  --k3s-arg "--disable=traefik@server:0" \
+  --port "80:80@loadbalancer" \
+  --port "443:443@loadbalancer"
 
-# 3. Install ArgoCD
-kubectl create namespace argocd
-helm repo add argo https://argoproj.github.io/argo-helm
-helm install argocd argo/argo-cd -n argocd -f argocd/values.yaml
+# 3. Bootstrap ArgoCD
+chmod +x bootstrap/install-argocd.sh
+./bootstrap/install-argocd.sh
 
-# 4. Wait for ArgoCD to be ready
-kubectl -n argocd rollout status deploy/argocd-server
-
-# 5. Apply the root App-of-Apps
+# 4. Apply root app
 kubectl apply -f bootstrap/root-app.yaml
 ```
 
-## Directory Structure
+## Accessing Services
 
-```
-.
-├── bootstrap/          # ArgoCD root App-of-Apps
-├── argocd/             # ArgoCD Helm values
-├── apps/               # ArgoCD Application manifests
-│   ├── base/           # App definitions
-│   └── overlays/local/ # Local environment overrides
-└── infrastructure/     # Helm values per service
-    ├── cert-manager/
-    ├── vault/
-    ├── minio/
-    ├── prometheus/
-    ├── loki/
-    └── keycloak/
-```
+See [docs/port-forwards.md](docs/port-forwards.md)
