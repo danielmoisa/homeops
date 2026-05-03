@@ -36,13 +36,13 @@ spec:
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests:
-                      storage: 10Gi
+                      storage: 5Gi
             resources:
               requests:
-                cpu: 100m
-                memory: 512Mi
+                cpu: 50m
+                memory: 256Mi
               limits:
-                memory: 2Gi
+                memory: 512Mi
           ingress:
             enabled: true
             ingressClassName: nginx
@@ -54,13 +54,13 @@ spec:
           persistence:
             enabled: true
             storageClassName: local-path
-            size: 2Gi
+            size: 1Gi
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 25m
+              memory: 64Mi
             limits:
-              memory: 512Mi
+              memory: 256Mi
           ingress:
             enabled: true
             ingressClassName: nginx

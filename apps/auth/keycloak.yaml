@@ -22,10 +22,10 @@ spec:
         proxy: edge
         resources:
           requests:
-            cpu: 100m
-            memory: 512Mi
+            cpu: 50m
+            memory: 256Mi
           limits:
-            memory: 1Gi
+            memory: 512Mi
         service:
           type: ClusterIP
         ingress:

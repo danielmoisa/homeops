@@ -44,14 +44,14 @@ spec:
           replicas: 1
           resources:
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 25m
+              memory: 128Mi
             limits:
-              memory: 512Mi
+              memory: 256Mi
           persistence:
             enabled: true
             storageClass: local-path
-            size: 10Gi
+            size: 5Gi
         read:
           replicas: 0
         write:
