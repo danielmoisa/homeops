@@ -7,12 +7,31 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://github.com/danielmoisa/homeops
-    targetRevision: HEAD
-    path: apps
-    directory:
-      recurse: true
+  sources:
+    # Infrastructure
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/infrastructure/ingress-nginx.yaml
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/infrastructure/cert-manager.yaml
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/infrastructure/cert-issuer.yaml
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/infrastructure/vault.yaml
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/infrastructure/external-secrets.yaml
+    # Auth
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/auth/keycloak.yaml
+    # Observability (only fluentbit)
+    - repoURL: https://github.com/danielmoisa/homeops
+      targetRevision: HEAD
+      path: apps/observability/fluentbit.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
